@@ -1,56 +1,44 @@
-import chromadb
-from chromadb.config import Settings
+import os
+from langchain_chroma import Chroma
+# from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
+from dotenv import load_dotenv
 
-def setup_chroma_db():
+# Load environment variables
+load_dotenv()
+
+def get_chroma_vector_store(collection_name="gemini_rag_collection"):
     """
-    Sets up the Chroma vector database.
-
-    Returns:
-        chromadb.Client: A Chroma database client instance.
+    Initializes and returns the Chroma vector store with HuggingFace embeddings.
     """
-    client = chromadb.Client(Settings(
-        persist_directory="./chroma_db",  # Directory to store the database
-        chroma_db_impl="duckdb+parquet",  # Database implementation
-        anonymized_telemetry=False
-    ))
-    return client
+    # Using HuggingFace Embeddings (local) to avoid API quotas
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    
+    vector_store = Chroma(
+        collection_name=collection_name,
+        embedding_function=embeddings,
+        persist_directory="./chroma_db"
+    )
+    return vector_store
 
-def add_to_chroma_db(client, collection_name, documents, metadatas):
+def add_documents_to_chroma(vector_store, documents):
     """
-    Adds documents to a Chroma collection.
-
+    Adds documents to the Chroma vector store.
+    
     Args:
-        client (chromadb.Client): The Chroma database client.
-        collection_name (str): Name of the collection.
-        documents (list): List of document texts.
-        metadatas (list): List of metadata dictionaries corresponding to the documents.
+        vector_store: The Chroma vector store instance.
+        documents (list): List of dictionaries with 'page_content' and 'metadata'.
     """
-    collection = client.get_or_create_collection(name=collection_name)
-    collection.add(documents=documents, metadatas=metadatas)
-
-def query_chroma_db(client, collection_name, query_text, n_results=5):
-    """
-    Queries the Chroma database for similar documents.
-
-    Args:
-        client (chromadb.Client): The Chroma database client.
-        collection_name (str): Name of the collection to query.
-        query_text (str): The query text.
-        n_results (int): Number of results to return.
-
-    Returns:
-        list: List of results from the query.
-    """
-    collection = client.get_collection(name=collection_name)
-    results = collection.query(query_texts=[query_text], n_results=n_results)
-    return results
+    from langchain.docstore.document import Document
+    
+    docs = [Document(page_content=d["page_content"], metadata=d["metadata"]) for d in documents]
+    vector_store.add_documents(docs)
+    print(f"Added {len(docs)} documents to the vector store.")
 
 if __name__ == "__main__":
     # Example usage
-    client = setup_chroma_db()
-    documents = ["This is a sample document.", "Another example document."]
-    metadatas = [{"source": "example1"}, {"source": "example2"}]
-    add_to_chroma_db(client, "example_collection", documents, metadatas)
-
-    query_results = query_chroma_db(client, "example_collection", "sample")
-    print("Query Results:", query_results)
+    try:
+        vector_store = get_chroma_vector_store()
+        print("Chroma vector store initialized successfully.")
+    except Exception as e:
+        print(f"Error initializing Chroma: {e}")

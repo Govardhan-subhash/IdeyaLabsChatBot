@@ -11,7 +11,7 @@ def query_gemini_api(prompt, api_key):
     Returns:
         str: The response from the Gemini API.
     """
-    url = "https://api.gemini.com/v1/llm"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"

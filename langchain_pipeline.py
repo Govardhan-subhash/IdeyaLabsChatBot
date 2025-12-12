@@ -1,56 +1,53 @@
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
-from langchain.vectorstores import Chroma
-from langchain.embeddings import OpenAIEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI
+import os
+from dotenv import load_dotenv
 
-def create_langchain_pipeline(chroma_client, collection_name):
+load_dotenv()
+
+def create_rag_pipeline(vector_store):
     """
-    Creates a LangChain pipeline for Retrieval-Augmented Generation (RAG).
-
-    Args:
-        chroma_client: The Chroma database client.
-        collection_name (str): Name of the Chroma collection to use.
-
-    Returns:
-        RetrievalQA: A LangChain RetrievalQA pipeline.
+    Creates a RAG pipeline using Gemini and the provided vector store.
     """
-    # Initialize the Chroma vector store
-    vector_store = Chroma(
-        client=chroma_client,
-        collection_name=collection_name,
-        embedding_function=OpenAIEmbeddings()
+    api_key = os.getenv("GOOGLE_API_KEY")
+    
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash",
+        google_api_key=api_key,
+        temperature=0.3
     )
+    prompt_template = """
+You are a helpful and respectful AI assistant.
 
-    # Define the prompt template
-    prompt_template = PromptTemplate(
-        input_variables=["context", "question"],
-        template="""
-        Use the following context to answer the question accurately:
-        Context: {context}
-        Question: {question}
-        Answer:
-        """
+Use the provided context ONLY when the user's question is about IdeyaLabs.
+
+Rules:
+1. If the question is NOT about IdeyaLabs (general greetings or general knowledge questions), answer naturally using your general knowledge.
+2. If the question IS about IdeyaLabs and relevant context chunks are available, answer strictly using only those context chunks.
+3. If the question IS about IdeyaLabs and no relevant context chunks exist:
+   - First check if you already know the correct answer from your own general knowledge.
+   - If you know it confidently, provide the answer.
+   - If you do NOT know it confidently, respond with: "This information is not yet updated."
+
+Context:
+{context}
+
+Question:
+{question}
+
+Answer:
+"""
+
+    PROMPT = PromptTemplate(
+        template=prompt_template, input_variables=["context", "question"]
     )
-
-    # Create the RetrievalQA pipeline
-    qa_pipeline = RetrievalQA(
-        retriever=vector_store.as_retriever(),
-        prompt=prompt_template
+    
+    qa_chain = RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=vector_store.as_retriever(search_kwargs={"k": 5}),
+        chain_type_kwargs={"prompt": PROMPT}
     )
-
-    return qa_pipeline
-
-if __name__ == "__main__":
-    from chroma_setup import setup_chroma_db
-
-    # Example usage
-    chroma_client = setup_chroma_db()
-    collection_name = "example_collection"
-
-    # Create the LangChain pipeline
-    qa_pipeline = create_langchain_pipeline(chroma_client, collection_name)
-
-    # Example query
-    question = "What is a sample document?"
-    response = qa_pipeline.run(question=question)
-    print("Response:", response)
+    
+    return qa_chain
